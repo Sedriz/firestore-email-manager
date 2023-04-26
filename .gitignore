@@ -201,3 +201,5 @@ javadoc/
 cwallet.sso.lck
 
 .idea/*
+secrets/*
+data.json
