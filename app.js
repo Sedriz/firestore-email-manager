@@ -3,8 +3,9 @@ require("dotenv").config()
 const admin = require("firebase-admin");
 const fs = require('fs')
 const dataFile = "./data.json";
+const createEmailBody = require("./email-template")
 
-async function getBookings(db) {
+async function getCollectionData(db) {
     const collection = db.collection(process.env.COLLECTION_PATH);
     const snapshot = await collection.get();
     if (snapshot.empty) {
@@ -40,7 +41,8 @@ function writeNewData(dataArray) {
 
     for (const data of dataArray) {
         if (fileContent.indexOf(data) === -1) {
-            fileContent.push(data)
+            fileContent.push(data);
+            console.log('Writing new id to file: ' + data);
         }
     }
 
@@ -50,21 +52,7 @@ function writeNewData(dataArray) {
     });
 }
 
-function createEmailBody(data) {
-    return `
-Anfrage erhalten von ${data.name}.
-Email: ${data.email}
-Datum: ${new Date(data.timestamp)}
-Anliegen: ${data.subject}
-\n
-${data.body}
-\n
-Dies ist eine automatisch erstellte Email.
-Bitte keine Links öffnen welche hier enthalten sind!
-`;
-}
-
-function sendEmail(body) {
+function sendEmail(data) {
     const transporter = nodemailer.createTransport({
         host: 'mail.gmx.com',
         port: 587,
@@ -82,15 +70,15 @@ function sendEmail(body) {
     let mailOptions = {
         from: process.env.SENDER_USERNAME,
         to: process.env.RECEIVER_EMAIL,
-        subject: 'Jemand hat dein Kontaktformular ausgefüllt :D',
-        text: body
+        subject: 'New Message from: ' + data.name,
+        text: createEmailBody(data)
     };
 
     transporter.sendMail(mailOptions, function(error, info){
         if (error) {
             console.log(error);
         } else {
-            console.log('Email sent: ' + info.response);
+            console.log('Email sent with id: ' + data.id + ', and response: ' + info.response);
         }
     });
 }
@@ -103,7 +91,7 @@ const app = admin.initializeApp({
 });
 const db = admin.firestore(app);
 
-getBookings(db).then(bookings => {
+getCollectionData(db).then(bookings => {
     let differences = readDifferences(bookings);
     if (differences) {
         differences = differences.map(differenceID => bookings.find(booking => booking.id === differenceID));
@@ -111,9 +99,14 @@ getBookings(db).then(bookings => {
     else {
         differences = bookings;
     }
+
+    if (typeof differences === "undefined" || differences.length === 0) {
+        console.log("No new Data found!")
+        return
+    }
+
     for (const difference of differences) {
-        let body = createEmailBody(difference);
-        sendEmail(body);
+        sendEmail(difference);
     }
     writeNewData(bookings);
 });
